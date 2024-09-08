@@ -8,6 +8,28 @@
 
 #include <vk_types.h>
 #include <vector>
+#include <deque>
+#include <functional>
+
+struct DeletionQueue
+{
+	std::deque<std::function<void()>> deletors;
+
+	void push_function(std::function<void()>&& function) {
+		deletors.push_back(function);
+	}
+
+	void flush() {
+		// reverse iterate the deletion queue to execute all the functions
+		for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
+			(*it)(); //call the function
+		}
+
+		deletors.clear();
+	}
+};
+
+class VmaAllocator;
 
 class VulkanEngine {
 public:
@@ -49,6 +71,16 @@ public:
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
 
+	VkPipelineLayout _trianglePipelineLayout;
+	VkPipeline _trianglePipeline;
+	VkPipeline _redTrianglePipeline;
+
+	int _selectedShader{ 0 };
+
+	DeletionQueue _mainDeletionQueue;
+
+	VmaAllocator _allocator; //vma lib allocator
+
 	//initializes everything in the engine
 	void init();
 
@@ -60,6 +92,11 @@ public:
 
 	//run main loop
 	void run();
+
+	//loads a shader module from a spir-v file. Returns false if it errors
+	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
+
+
 private:
 	void init_vulkan();
 	void init_swapchain();
@@ -67,4 +104,39 @@ private:
 	void init_default_renderpass();
 	void init_framebuffers();
 	void init_sync_structures();
+	void init_pipelines();
+
+	static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+	{
+		VulkanEngine *engine = reinterpret_cast<VulkanEngine*>(glfwGetWindowUserPointer(window));
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+			glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
+		{
+			engine->_selectedShader += 1;
+			if (engine->_selectedShader > 1)
+			{
+				engine->_selectedShader = 0;
+			}
+		}
+	}
 };
+
+
+class PipelineBuilder {
+public:
+
+	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
+	VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
+	VkPipelineInputAssemblyStateCreateInfo _inputAssembly;
+	VkViewport _viewport;
+	VkRect2D _scissor;
+	VkPipelineRasterizationStateCreateInfo _rasterizer;
+	VkPipelineColorBlendAttachmentState _colorBlendAttachment;
+	VkPipelineMultisampleStateCreateInfo _multisampling;
+	VkPipelineLayout _pipelineLayout;
+
+	VkPipeline build_pipeline(VkDevice device, VkRenderPass pass);
+};
+
