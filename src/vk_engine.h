@@ -5,11 +5,19 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 
 #include <vk_types.h>
+#include <vk_mesh.h>
+
 #include <vector>
 #include <deque>
 #include <functional>
+
+struct MeshPushConstants {
+	glm::vec4 data;
+	glm::mat4 render_matrix;
+};
 
 struct DeletionQueue
 {
@@ -29,7 +37,6 @@ struct DeletionQueue
 	}
 };
 
-class VmaAllocator;
 
 class VulkanEngine {
 public:
@@ -75,6 +82,10 @@ public:
 	VkPipeline _trianglePipeline;
 	VkPipeline _redTrianglePipeline;
 
+	VkPipelineLayout _meshPipelineLayout;
+	VkPipeline _meshPipeline;
+	Mesh _triangleMesh;
+
 	int _selectedShader{ 0 };
 
 	DeletionQueue _mainDeletionQueue;
@@ -105,7 +116,8 @@ private:
 	void init_framebuffers();
 	void init_sync_structures();
 	void init_pipelines();
-
+	void load_meshes();
+	void upload_mesh(Mesh& mesh);
 	static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 	{
 		VulkanEngine *engine = reinterpret_cast<VulkanEngine*>(glfwGetWindowUserPointer(window));
