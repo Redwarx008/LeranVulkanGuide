@@ -84,7 +84,15 @@ public:
 
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
+
 	Mesh _triangleMesh;
+	Mesh _monkeyMesh;
+
+	VkImageView _depthImageView;
+	AllocatedImage _depthImage;
+
+	//the format for the depth image
+	VkFormat _depthFormat;
 
 	int _selectedShader{ 0 };
 
@@ -148,6 +156,7 @@ public:
 	VkPipelineColorBlendAttachmentState _colorBlendAttachment;
 	VkPipelineMultisampleStateCreateInfo _multisampling;
 	VkPipelineLayout _pipelineLayout;
+	VkPipelineDepthStencilStateCreateInfo _depthStencil;
 
 	VkPipeline build_pipeline(VkDevice device, VkRenderPass pass);
 };
