@@ -52,6 +52,15 @@ struct RenderObject {
 	glm::mat4 transformMatrix;
 };
 
+struct FrameData {
+	VkSemaphore _presentSemaphore, _renderSemaphore;
+	VkFence _renderFence;
+
+	VkCommandPool _commandPool;
+	VkCommandBuffer _mainCommandBuffer;
+};
+
+constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
 public:
@@ -83,15 +92,9 @@ public:
 	VkQueue _graphicsQueue; //queue we will submit to
 	uint32_t _graphicsQueueFamily; //family of that queue
 
-	VkCommandPool _commandPool; //the command pool for our commands
-	VkCommandBuffer _mainCommandBuffer; //the buffer we will record into
-
 	VkRenderPass _renderPass;
 
 	std::vector<VkFramebuffer> _framebuffers;
-
-	VkSemaphore _presentSemaphore, _renderSemaphore;
-	VkFence _renderFence;
 
 	//default array of renderable objects
 	std::vector<RenderObject> _renderables;
@@ -106,6 +109,8 @@ public:
 	VkFormat _depthFormat;
 
 	int _selectedShader{ 0 };
+
+	FrameData _frames[FRAME_OVERLAP];
 
 	DeletionQueue _mainDeletionQueue;
 
@@ -165,6 +170,8 @@ private:
 			}
 		}
 	}
+
+	FrameData& get_current_frame();
 };
 
 
