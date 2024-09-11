@@ -52,12 +52,23 @@ struct RenderObject {
 	glm::mat4 transformMatrix;
 };
 
+
+struct GPUCameraData {
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 viewproj;
+};
+
 struct FrameData {
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
 
 	VkCommandPool _commandPool;
 	VkCommandBuffer _mainCommandBuffer;
+
+	//buffer that holds a single GPUCameraData to use when rendering
+	AllocatedBuffer cameraBuffer;
+	VkDescriptorSet globalDescriptor;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -108,6 +119,9 @@ public:
 	//the format for the depth image
 	VkFormat _depthFormat;
 
+	VkDescriptorSetLayout _globalSetLayout;
+	VkDescriptorPool _descriptorPool;
+
 	int _selectedShader{ 0 };
 
 	FrameData _frames[FRAME_OVERLAP];
@@ -139,6 +153,7 @@ private:
 	void init_default_renderpass();
 	void init_framebuffers();
 	void init_sync_structures();
+	void init_descriptors();
 	void init_pipelines();
 	void load_meshes();
 	void upload_mesh(Mesh& mesh);
@@ -172,6 +187,7 @@ private:
 	}
 
 	FrameData& get_current_frame();
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 };
 
 
