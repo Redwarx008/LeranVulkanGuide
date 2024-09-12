@@ -78,6 +78,13 @@ struct FrameData {
 	VkDescriptorSet objectDescriptor;
 };
 
+struct UploadContext {
+	VkFence _uploadFence;
+	VkCommandPool _commandPool;
+	VkCommandBuffer _commandBuffer;
+};
+
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
@@ -134,6 +141,8 @@ public:
 	int _selectedShader{ 0 };
 
 	FrameData _frames[FRAME_OVERLAP];
+
+	UploadContext _uploadContext;
 
 	DeletionQueue _mainDeletionQueue;
 
@@ -197,6 +206,7 @@ private:
 
 	FrameData& get_current_frame();
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 };
 
 
