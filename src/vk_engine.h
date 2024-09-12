@@ -59,6 +59,10 @@ struct GPUCameraData {
 	glm::mat4 viewproj;
 };
 
+struct GPUObjectData {
+	glm::mat4 modelMatrix;
+};
+
 struct FrameData {
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
@@ -69,6 +73,9 @@ struct FrameData {
 	//buffer that holds a single GPUCameraData to use when rendering
 	AllocatedBuffer cameraBuffer;
 	VkDescriptorSet globalDescriptor;
+
+	AllocatedBuffer objectBuffer;
+	VkDescriptorSet objectDescriptor;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -120,6 +127,8 @@ public:
 	VkFormat _depthFormat;
 
 	VkDescriptorSetLayout _globalSetLayout;
+	VkDescriptorSetLayout _objectSetLayout;
+
 	VkDescriptorPool _descriptorPool;
 
 	int _selectedShader{ 0 };
