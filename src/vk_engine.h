@@ -5,6 +5,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
 #include <glm/glm.hpp>
 
 #include <vk_types.h>
@@ -43,6 +44,12 @@ struct Material {
 	VkPipeline pipeline;
 	VkPipelineLayout pipelineLayout;
 };
+
+struct Texture {
+	AllocatedImage image;
+	VkImageView imageView;
+};
+
 
 struct RenderObject {
 	Mesh* mesh;
@@ -126,6 +133,7 @@ public:
 
 	std::unordered_map<std::string, Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;
+	std::unordered_map<std::string, Texture> _loadedTextures;
 
 	VkImageView _depthImageView;
 	AllocatedImage _depthImage;
@@ -162,7 +170,9 @@ public:
 
 	//loads a shader module from a spir-v file. Returns false if it errors
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
-
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void load_images();
 
 private:
 	void init_vulkan();
@@ -205,8 +215,6 @@ private:
 	}
 
 	FrameData& get_current_frame();
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
-	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 };
 
 

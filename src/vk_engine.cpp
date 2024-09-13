@@ -5,6 +5,7 @@
 
 #include <vk_types.h>
 #include <vk_initializers.h>
+#include <vk_textures.h>
 
 //bootstrap library
 #include "VkBootstrap.h"
@@ -62,6 +63,8 @@ void VulkanEngine::init()
 	init_descriptors();
 
 	init_pipelines();
+
+	load_images();
 
 	load_meshes();
 
@@ -329,19 +332,20 @@ void VulkanEngine::init_commands()
 
 		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
 
-		VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
-		//create pool for upload context
-		VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
-
-		//allocate the default command buffer that we will use for the instant commands
-		VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_uploadContext._commandPool, 1);
-		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_uploadContext._commandBuffer));
-
 		_mainDeletionQueue.push_function([=]() {
 			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
-			vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
 			});
 	}
+	VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
+	//create pool for upload context
+	VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
+
+	//allocate the default command buffer that we will use for the instant commands
+	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_uploadContext._commandPool, 1);
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_uploadContext._commandBuffer));
+	_mainDeletionQueue.push_function([&]() {
+		vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
+		});
 }
 
 void VulkanEngine::init_default_renderpass()
@@ -469,12 +473,19 @@ void VulkanEngine::init_sync_structures()
 
 	VkSemaphoreCreateInfo semaphoreCreateInfo = vkinit::semaphore_create_info();
 
+	VkFenceCreateInfo uploadFenceCreateInfo = vkinit::fence_create_info();
+
+	VK_CHECK(vkCreateFence(_device, &uploadFenceCreateInfo, nullptr, &_uploadContext._uploadFence));
+	_mainDeletionQueue.push_function([&]() {
+		vkDestroyFence(_device, _uploadContext._uploadFence, nullptr);
+		});
+
 	for (int i = 0; i < FRAME_OVERLAP; i++) {
 
 		VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
 
 		//enqueue the destruction of the fence
-		_mainDeletionQueue.push_function([=]() {
+		_mainDeletionQueue.push_function([&, i]() {
 			vkDestroyFence(_device, _frames[i]._renderFence, nullptr);
 			});
 
@@ -483,7 +494,7 @@ void VulkanEngine::init_sync_structures()
 		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._renderSemaphore));
 
 		//enqueue the destruction of semaphores
-		_mainDeletionQueue.push_function([=]() {
+		_mainDeletionQueue.push_function([&, i]() {
 			vkDestroySemaphore(_device, _frames[i]._presentSemaphore, nullptr);
 			vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
 			});
@@ -551,6 +562,11 @@ void VulkanEngine::init_pipelines() {
 	}
 	else {
 		std::cout << "Red Triangle vertex shader successfully loaded" << std::endl;
+	}
+	VkShaderModule texturedMeshShader;
+	if (!load_shader_module("../shaders/textured_lit.frag.spv", &texturedMeshShader))
+	{
+		std::cout << "Error when building the textured mesh shader" << std::endl;
 	}
 
 
@@ -636,12 +652,26 @@ void VulkanEngine::init_pipelines() {
 	meshPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
 	create_material(meshPipeline, meshPipelineLayout, "defaultmesh");
 
+
+	pipelineBuilder._shaderStages.clear();
+	//add the other shaders
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+
+	//make sure that triangleFragShader is holding the compiled colored_triangle.frag
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
+
+	VkPipeline texPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	create_material(texPipeline, meshPipelineLayout, "texturedmesh");
+
 	vkDestroyShaderModule(_device, triangleFragShader, nullptr);
 	vkDestroyShaderModule(_device, meshVertShader, nullptr);
+	vkDestroyShaderModule(_device, texturedMeshShader, nullptr);
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyPipeline(_device, meshPipeline, nullptr);
-
+		//vkDestroyPipelineLayout(_device, texturedPipeLayout, nullptr);
 		vkDestroyPipelineLayout(_device, meshPipelineLayout, nullptr);
 		});
 }
@@ -725,11 +755,16 @@ void VulkanEngine::load_meshes()
 		//load the monkey
 	monkeyMesh.load_from_obj("../assets/monkey_smooth.obj");
 
+	Mesh lostEmpire{};
+	lostEmpire.load_from_obj("../assets/lost_empire.obj");
+
 	upload_mesh(triangleMesh);
 	upload_mesh(monkeyMesh);
+	upload_mesh(lostEmpire);
 	//note that we are copying them. Eventually we will delete the hardcoded _monkey and _triangle meshes, so it's no problem now.
 	_meshes["monkey"] = monkeyMesh;
 	_meshes["triangle"] = triangleMesh;
+	_meshes["empire"] = lostEmpire;
 }
 
 void VulkanEngine::upload_mesh(Mesh& mesh)
@@ -904,6 +939,13 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int co
 
 void VulkanEngine::init_scene()
 {
+	RenderObject map;
+	map.mesh = get_mesh("empire");
+	map.material = get_material("texturedmesh");
+	map.transformMatrix = glm::translate(glm::vec3{ 5,-10,0 });
+
+	_renderables.push_back(map);
+
 	RenderObject monkey;
 	monkey.mesh = get_mesh("monkey");
 	monkey.material = get_material("defaultmesh");
@@ -1130,4 +1172,16 @@ void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& f
 
 	// reset the command buffers inside the command pool
 	vkResetCommandPool(_device, _uploadContext._commandPool, 0);
+}
+
+void VulkanEngine::load_images()
+{
+	Texture lostEmpire;
+
+	vkutil::load_image_from_file(*this, "../assets/lost_empire-RGBA.png", lostEmpire.image);
+
+	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_SRGB, lostEmpire.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(_device, &imageinfo, nullptr, &lostEmpire.imageView);
+
+	_loadedTextures["empire_diffuse"] = lostEmpire;
 }
