@@ -640,6 +640,17 @@ void VulkanEngine::init_pipelines() {
 	meshPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
 	create_material(meshPipeline, meshPipelineLayout, "defaultmesh");
 
+	//create pipeline layout for the textured mesh, which has 3 descriptor sets
+//we start from  the normal mesh layout
+	VkPipelineLayoutCreateInfo textured_pipeline_layout_info = mesh_pipeline_layout_info;
+
+	VkDescriptorSetLayout texturedSetLayouts[] = { _globalSetLayout, _objectSetLayout,_singleTextureSetLayout };
+
+	textured_pipeline_layout_info.setLayoutCount = 3;
+	textured_pipeline_layout_info.pSetLayouts = texturedSetLayouts;
+
+	VkPipelineLayout texturedPipeLayout;
+	VK_CHECK(vkCreatePipelineLayout(_device, &textured_pipeline_layout_info, nullptr, &texturedPipeLayout));
 
 	pipelineBuilder._shaderStages.clear();
 	//add the other shaders
@@ -649,9 +660,10 @@ void VulkanEngine::init_pipelines() {
 	//make sure that triangleFragShader is holding the compiled colored_triangle.frag
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
+	pipelineBuilder._pipelineLayout = texturedPipeLayout;
 
 	VkPipeline texPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
-	create_material(texPipeline, meshPipelineLayout, "texturedmesh");
+	create_material(texPipeline, texturedPipeLayout, "texturedmesh");
 
 	vkDestroyShaderModule(_device, triangleFragShader, nullptr);
 	vkDestroyShaderModule(_device, meshVertShader, nullptr);
@@ -659,7 +671,7 @@ void VulkanEngine::init_pipelines() {
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyPipeline(_device, meshPipeline, nullptr);
-		//vkDestroyPipelineLayout(_device, texturedPipeLayout, nullptr);
+		vkDestroyPipelineLayout(_device, texturedPipeLayout, nullptr);
 		vkDestroyPipelineLayout(_device, meshPipelineLayout, nullptr);
 		});
 }
@@ -905,6 +917,11 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int co
 			lastMaterial = object.material;
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 0, nullptr);
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
+			if (object.material->textureSet != VK_NULL_HANDLE) {
+				//texture descriptor
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+
+			}
 		}
 
 		//only bind the mesh if it's a different one from last bind
@@ -928,26 +945,56 @@ void VulkanEngine::init_scene()
 
 	_renderables.push_back(map);
 
-	RenderObject monkey;
-	monkey.mesh = get_mesh("monkey");
-	monkey.material = get_material("defaultmesh");
-	monkey.transformMatrix = glm::mat4{ 1.0f };
+	//create a sampler for the texture
+	VkSamplerCreateInfo samplerInfo = vkinit::sampler_create_info(VK_FILTER_NEAREST);
 
-	_renderables.push_back(monkey);
+	VkSampler blockySampler;
+	vkCreateSampler(_device, &samplerInfo, nullptr, &blockySampler);
 
-	for (int x = -20; x <= 20; x++) {
-		for (int y = -20; y <= 20; y++) {
 
-			RenderObject tri;
-			tri.mesh = get_mesh("triangle");
-			tri.material = get_material("defaultmesh");
-			glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(x, 0, y));
-			glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
-			tri.transformMatrix = translation * scale;
 
-			_renderables.push_back(tri);
-		}
-	}
+	Material* texturedMat = get_material("texturedmesh");
+
+	//allocate the descriptor set for single-texture to use on the material
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.pNext = nullptr;
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &_singleTextureSetLayout;
+
+	vkAllocateDescriptorSets(_device, &allocInfo, &texturedMat->textureSet);
+
+	//write to the descriptor set so that it points to our empire_diffuse texture
+	VkDescriptorImageInfo imageBufferInfo;
+	imageBufferInfo.sampler = blockySampler;
+	imageBufferInfo.imageView = _loadedTextures["empire_diffuse"].imageView;
+	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet texture1 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texturedMat->textureSet, &imageBufferInfo, 0);
+
+	vkUpdateDescriptorSets(_device, 1, &texture1, 0, nullptr);
+
+	//RenderObject monkey;
+	//monkey.mesh = get_mesh("monkey");
+	//monkey.material = get_material("defaultmesh");
+	//monkey.transformMatrix = glm::mat4{ 1.0f };
+
+	//_renderables.push_back(monkey);
+
+	//for (int x = -20; x <= 20; x++) {
+	//	for (int y = -20; y <= 20; y++) {
+
+	//		RenderObject tri;
+	//		tri.mesh = get_mesh("triangle");
+	//		tri.material = get_material("defaultmesh");
+	//		glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(x, 0, y));
+	//		glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
+	//		tri.transformMatrix = translation * scale;
+
+	//		_renderables.push_back(tri);
+	//	}
+	//}
 }
 
 FrameData& VulkanEngine::get_current_frame()
@@ -1119,7 +1166,7 @@ void VulkanEngine::init_descriptors()
 
 		VkWriteDescriptorSet setWrites[] = { cameraWrite, objectWrite };
 
-		vkUpdateDescriptorSets(_device, 1, &setWrites[0], 0, nullptr);
+		vkUpdateDescriptorSets(_device, 2, &setWrites[0], 0, nullptr);
 
 
 	}
